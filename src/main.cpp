@@ -1,3 +1,5 @@
+#include <fstream>
+#include <string>
 #include <vulkan/vulkan.h>
 #include "Instance.h"
 #include "Window.h"
@@ -65,6 +67,30 @@ namespace {
     }
 }
 
+namespace {
+    std::string ResolveProjectPath(const std::string& relativePath) {
+        const std::string candidates[] = {
+            relativePath,
+            std::string("../") + relativePath,
+            std::string("../src/") + relativePath,
+            std::string("../build/src/") + relativePath,
+            std::string("src/") + relativePath,
+            std::string("build/src/") + relativePath,
+            std::string("../") + std::string("src/") + relativePath,
+            std::string("../") + std::string("build/src/") + relativePath,
+        };
+
+        for (const std::string& candidate : candidates) {
+            std::ifstream test(candidate.c_str());
+            if (test.good()) {
+                return candidate;
+            }
+        }
+
+        return relativePath;
+    }
+}
+
 int main() {
     static constexpr char* applicationName = "Vulkan Grass Rendering";
     InitializeWindow(640, 480, applicationName);
@@ -104,9 +130,10 @@ int main() {
 
     VkImage grassImage;
     VkDeviceMemory grassImageMemory;
+    const std::string grassImagePath = ResolveProjectPath("src/images/grass.jpg");
     Image::FromFile(device,
         transferCommandPool,
-        "images/grass.jpg",
+        grassImagePath.c_str(),
         VK_FORMAT_R8G8B8A8_UNORM,
         VK_IMAGE_TILING_OPTIMAL,
         VK_IMAGE_USAGE_SAMPLED_BIT,

@@ -21,36 +21,59 @@ struct Blade {
     vec4 up;
 };
 
-// TODO: Add bindings to:
-// 1. Store the input blades
-// 2. Write out the culled blades
-// 3. Write the total number of blades remaining
+layout(set = 2, binding = 0) readonly buffer InputBlades {
+    Blade blades[];
+} inputBlades;
 
-// The project is using vkCmdDrawIndirect to use a buffer as the arguments for a draw call
-// This is sort of an advanced feature so we've showed you what this buffer should look like
-//
-// layout(set = ???, binding = ???) buffer NumBlades {
-// 	  uint vertexCount;   // Write the number of blades remaining here
-// 	  uint instanceCount; // = 1
-// 	  uint firstVertex;   // = 0
-// 	  uint firstInstance; // = 0
-// } numBlades;
+layout(set = 2, binding = 1) buffer CulledBlades {
+    Blade blades[];
+} culledBlades;
+
+layout(set = 2, binding = 2) buffer NumBlades {
+    uint vertexCount;
+    uint instanceCount;
+    uint firstVertex;
+    uint firstInstance;
+} numBlades;
 
 bool inBounds(float value, float bounds) {
     return (value >= -bounds) && (value <= bounds);
 }
 
 void main() {
-	// Reset the number of blades to 0
-	if (gl_GlobalInvocationID.x == 0) {
-		// numBlades.vertexCount = 0;
-	}
-	barrier(); // Wait till all threads reach this point
+    uint index = gl_GlobalInvocationID.x;
+    if (index == 0u) {
+        numBlades.vertexCount = 0u;
+        numBlades.instanceCount = 1u;
+        numBlades.firstVertex = 0u;
+        numBlades.firstInstance = 0u;
+    }
+    barrier();
 
-    // TODO: Apply forces on every blade and update the vertices in the buffer
+    if (index >= 8192u) {
+        return;
+    }
 
-	// TODO: Cull blades that are too far away or not in the camera frustum and write them
-	// to the culled blades buffer
-	// Note: to do this, you will need to use an atomic operation to read and update numBlades.vertexCount
-	// You want to write the visible blades to the buffer without write conflicts between threads
+    Blade blade = inputBlades.blades[index];
+    vec3 wind = vec3(sin(blade.v0.x * 0.7 + totalTime * 1.3), 0.0, cos(blade.v0.z * 0.8 + totalTime * 1.1));
+    vec3 up = normalize(blade.up.xyz);
+    vec3 v2 = blade.v2.xyz + wind * deltaTime * 0.5;
+
+    float height = blade.v1.w;
+    float width = blade.v2.w;
+    vec3 desiredV1 = blade.v0.xyz + up * height;
+    blade.v1.xyz = mix(blade.v1.xyz, desiredV1, 0.2);
+    blade.v2.xyz = v2;
+    blade.v2.w = width;
+
+    vec4 clipPos = camera.proj * camera.view * vec4(blade.v0.xyz, 1.0);
+    float radius = max(3.0, width * 25.0);
+    bool visible = clipPos.z > -0.1 && clipPos.z < clipPos.w * 2.0 &&
+                   abs(clipPos.x) < clipPos.w + radius &&
+                   abs(clipPos.y) < clipPos.w + radius;
+
+    if (visible) {
+        uint writeIndex = atomicAdd(numBlades.vertexCount, 1u);
+        culledBlades.blades[writeIndex] = blade;
+    }
 }
