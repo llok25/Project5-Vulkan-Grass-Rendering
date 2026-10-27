@@ -21,7 +21,7 @@ struct Blade {
     vec4 up;
 };
 
-layout(set = 2, binding = 0) readonly buffer InputBlades {
+layout(set = 2, binding = 0) buffer InputBlades {
     Blade blades[];
 } inputBlades;
 
@@ -35,10 +35,6 @@ layout(set = 2, binding = 2) buffer NumBlades {
     uint firstVertex;
     uint firstInstance;
 } numBlades;
-
-bool inBounds(float value, float bounds) {
-    return (value >= -bounds) && (value <= bounds);
-}
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
@@ -55,30 +51,62 @@ void main() {
     }
 
     Blade blade = inputBlades.blades[index];
-    vec3 wind = vec3(sin(blade.v0.x * 0.7 + totalTime * 1.3), 0.0, cos(blade.v0.z * 0.8 + totalTime * 1.1));
     vec3 up = normalize(blade.up.xyz);
     float height = blade.v1.w;
     float width = blade.v2.w;
     float stiffness = max(blade.up.w, 0.001);
     vec3 restV2 = blade.v0.xyz + up * height;
-    vec3 restV1 = blade.v0.xyz + up * (height * 0.55);
-    vec3 guideOffset = blade.v1.xyz - restV1;
-    blade.v1.xyz = restV1 + guideOffset + wind / stiffness * 0.25;
-    blade.v2.xyz = restV2 + wind / stiffness;
+
+    vec3 reference = abs(up.x) > 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    reference = normalize(reference - up * dot(reference, up));
+    float orientation = blade.v0.w;
+    vec3 facing = normalize(reference * cos(orientation) + cross(up, reference) * sin(orientation));
+    vec3 side = normalize(cross(up, facing));
+
+    vec3 environmentalGravity = vec3(0.0, -9.8, 0.0);
+    vec3 frontGravity = 0.25 * length(environmentalGravity) * facing;
+    vec3 gravity = environmentalGravity + frontGravity;
+
+    vec3 windDirection = normalize(vec3(
+        sin(blade.v0.x * 0.7 + totalTime * 1.3),
+        0.0,
+        cos(blade.v0.z * 0.8 + totalTime * 1.1)
+    ));
+    float windAlignment = abs(dot(facing, windDirection));
+    vec3 wind = windDirection * windAlignment;
+
+    vec3 recovery = (restV2 - blade.v2.xyz) * stiffness;
+    vec3 translatedV2 = blade.v2.xyz + (gravity + recovery + wind) * deltaTime;
+    vec3 offset = translatedV2 - blade.v0.xyz;
+    vec3 lateralOffset = offset - up * dot(offset, up);
+    float minimumVerticalOffset = height * 0.05;
+    float maximumLateralLength = sqrt(max(height * height - minimumVerticalOffset * minimumVerticalOffset, 0.0));
+    float lateralLength = length(lateralOffset);
+    if (lateralLength > maximumLateralLength) {
+        lateralOffset *= maximumLateralLength / lateralLength;
+        lateralLength = maximumLateralLength;
+    }
+
+    float correctedVerticalOffset = sqrt(max(height * height - lateralLength * lateralLength, 0.0));
+    blade.v2.xyz = blade.v0.xyz + lateralOffset + up * correctedVerticalOffset;
     blade.v2.w = width;
+    blade.v1.xyz = blade.v0.xyz + (blade.v2.xyz - blade.v0.xyz) * 0.5 + side * (height * 0.15);
 
     vec4 clipV0 = camera.proj * camera.view * vec4(blade.v0.xyz, 1.0);
     vec4 clipV1 = camera.proj * camera.view * vec4(blade.v1.xyz, 1.0);
     vec4 clipV2 = camera.proj * camera.view * vec4(blade.v2.xyz, 1.0);
+    vec3 midpoint = (blade.v0.xyz + 2.0 * blade.v1.xyz + blade.v2.xyz) * 0.25;
+    vec4 clipMidpoint = camera.proj * camera.view * vec4(midpoint, 1.0);
     float radius = max(3.0, width * 25.0);
-    bool outsideLeft = clipV0.x < -clipV0.w - radius && clipV1.x < -clipV1.w - radius && clipV2.x < -clipV2.w - radius;
-    bool outsideRight = clipV0.x > clipV0.w + radius && clipV1.x > clipV1.w + radius && clipV2.x > clipV2.w + radius;
-    bool outsideBottom = clipV0.y < -clipV0.w - radius && clipV1.y < -clipV1.w - radius && clipV2.y < -clipV2.w - radius;
-    bool outsideTop = clipV0.y > clipV0.w + radius && clipV1.y > clipV1.w + radius && clipV2.y > clipV2.w + radius;
-    bool outsideNear = clipV0.z < -0.1 && clipV1.z < -0.1 && clipV2.z < -0.1;
-    bool outsideFar = clipV0.z > clipV0.w * 2.0 && clipV1.z > clipV1.w * 2.0 && clipV2.z > clipV2.w * 2.0;
+    bool outsideLeft = clipV0.x < -clipV0.w - radius && clipMidpoint.x < -clipMidpoint.w - radius && clipV2.x < -clipV2.w - radius;
+    bool outsideRight = clipV0.x > clipV0.w + radius && clipMidpoint.x > clipMidpoint.w + radius && clipV2.x > clipV2.w + radius;
+    bool outsideBottom = clipV0.y < -clipV0.w - radius && clipMidpoint.y < -clipMidpoint.w - radius && clipV2.y < -clipV2.w - radius;
+    bool outsideTop = clipV0.y > clipV0.w + radius && clipMidpoint.y > clipMidpoint.w + radius && clipV2.y > clipV2.w + radius;
+    bool outsideNear = clipV0.z < -0.1 && clipMidpoint.z < -0.1 && clipV2.z < -0.1;
+    bool outsideFar = clipV0.z > clipV0.w * 2.0 && clipMidpoint.z > clipMidpoint.w * 2.0 && clipV2.z > clipV2.w * 2.0;
     bool visible = !(outsideLeft || outsideRight || outsideBottom || outsideTop || outsideNear || outsideFar);
 
+    inputBlades.blades[index] = blade;
     if (visible) {
         uint writeIndex = atomicAdd(numBlades.vertexCount, 1u);
         culledBlades.blades[writeIndex] = blade;

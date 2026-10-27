@@ -1019,6 +1019,23 @@ void Renderer::RecordComputeCommandBuffer() {
         vkCmdDispatch(computeCommandBuffer, static_cast<uint32_t>((NUM_BLADES + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE), 1, 1);
     }
 
+    VkMemoryBarrier simulationBarrier = {};
+    simulationBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    simulationBarrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    simulationBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+    vkCmdPipelineBarrier(
+        computeCommandBuffer,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0,
+        1,
+        &simulationBarrier,
+        0,
+        nullptr,
+        0,
+        nullptr
+    );
+
     // ~ End recording ~
     if (vkEndCommandBuffer(computeCommandBuffer) != VK_SUCCESS) {
         throw std::runtime_error("Failed to record compute command buffer");
