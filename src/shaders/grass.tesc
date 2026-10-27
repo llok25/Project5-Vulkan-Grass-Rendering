@@ -25,10 +25,21 @@ void main() {
     outV2[gl_InvocationID] = inV2[gl_InvocationID];
     outUp[gl_InvocationID] = inUp[gl_InvocationID];
 
-    gl_TessLevelInner[0] = 8.0;
-    gl_TessLevelInner[1] = 8.0;
-    gl_TessLevelOuter[0] = 8.0;
-    gl_TessLevelOuter[1] = 8.0;
-    gl_TessLevelOuter[2] = 8.0;
-    gl_TessLevelOuter[3] = 8.0;
+    vec3 cameraPosition = (inverse(camera.view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+    float cameraDistance = length(cameraPosition - inV0[gl_InvocationID].xyz);
+    float curveTessellation = 4.0;
+    if (cameraDistance < 12.0) {
+        curveTessellation = 16.0;
+    } else if (cameraDistance < 24.0) {
+        curveTessellation = 12.0;
+    } else if (cameraDistance < 36.0) {
+        curveTessellation = 8.0;
+    }
+
+    gl_TessLevelInner[0] = curveTessellation;
+    gl_TessLevelInner[1] = 2.0;
+    gl_TessLevelOuter[0] = 2.0;
+    gl_TessLevelOuter[1] = curveTessellation;
+    gl_TessLevelOuter[2] = 2.0;
+    gl_TessLevelOuter[3] = curveTessellation;
 }

@@ -24,17 +24,40 @@ namespace {
 
     bool leftMouseDown = false;
     bool rightMouseDown = false;
+    bool draggingCollider = false;
     double previousX = 0.0;
     double previousY = 0.0;
 
     void mouseDownCallback(GLFWwindow* window, int button, int action, int mods) {
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
             if (action == GLFW_PRESS) {
-                leftMouseDown = true;
-                glfwGetCursorPos(window, &previousX, &previousY);
+                double cursorX;
+                double cursorY;
+                glfwGetCursorPos(window, &cursorX, &cursorY);
+                int width;
+                int height;
+                glfwGetWindowSize(window, &width, &height);
+                Scene* scene = static_cast<Scene*>(glfwGetWindowUserPointer(window));
+                draggingCollider = scene != nullptr && camera->ScreenRayIntersectsSphere(
+                    cursorX, cursorY, width, height, scene->GetColliderPosition(), scene->GetColliderRadius());
+                if (draggingCollider) {
+                    scene->BeginColliderDrag();
+                    leftMouseDown = false;
+                } else {
+                    leftMouseDown = true;
+                    previousX = cursorX;
+                    previousY = cursorY;
+                }
             }
             else if (action == GLFW_RELEASE) {
                 leftMouseDown = false;
+                if (draggingCollider) {
+                    Scene* scene = static_cast<Scene*>(glfwGetWindowUserPointer(window));
+                    if (scene != nullptr) {
+                        scene->EndColliderDrag();
+                    }
+                    draggingCollider = false;
+                }
             }
         } else if (button == GLFW_MOUSE_BUTTON_RIGHT) {
             if (action == GLFW_PRESS) {
@@ -48,7 +71,17 @@ namespace {
     }
 
     void mouseMoveCallback(GLFWwindow* window, double xPosition, double yPosition) {
-        if (leftMouseDown) {
+        if (draggingCollider) {
+            Scene* scene = static_cast<Scene*>(glfwGetWindowUserPointer(window));
+            int width;
+            int height;
+            glfwGetWindowSize(window, &width, &height);
+            glm::vec3 dragPosition;
+            if (scene != nullptr && camera->ScreenToWorldOnPlane(
+                xPosition, yPosition, width, height, scene->GetColliderPosition().y, dragPosition)) {
+                scene->DragColliderTo(dragPosition);
+            }
+        } else if (leftMouseDown) {
             double sensitivity = 0.5;
             float deltaX = static_cast<float>((previousX - xPosition) * sensitivity);
             float deltaY = static_cast<float>((previousY - yPosition) * sensitivity);
@@ -63,6 +96,50 @@ namespace {
             camera->UpdateOrbit(0.0f, 0.0f, deltaZ);
 
             previousY = yPosition;
+        }
+    }
+
+    void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+        if (action != GLFW_PRESS && action != GLFW_REPEAT) {
+            return;
+        }
+
+        Scene* scene = static_cast<Scene*>(glfwGetWindowUserPointer(window));
+        if (scene == nullptr) {
+            return;
+        }
+
+        const float directionStep = 0.1745329252f;
+        switch (key) {
+        case GLFW_KEY_W:
+            scene->AdjustWind(0.25f, 0.0f);
+            break;
+        case GLFW_KEY_S:
+            scene->AdjustWind(-0.25f, 0.0f);
+            break;
+        case GLFW_KEY_A:
+            scene->AdjustWind(0.0f, -directionStep);
+            break;
+        case GLFW_KEY_D:
+            scene->AdjustWind(0.0f, directionStep);
+            break;
+        case GLFW_KEY_R:
+            scene->ResetWind();
+            break;
+        case GLFW_KEY_UP:
+            scene->MoveCollider(0.0f, -0.25f);
+            break;
+        case GLFW_KEY_DOWN:
+            scene->MoveCollider(0.0f, 0.25f);
+            break;
+        case GLFW_KEY_LEFT:
+            scene->MoveCollider(-0.25f, 0.0f);
+            break;
+        case GLFW_KEY_RIGHT:
+            scene->MoveCollider(0.25f, 0.0f);
+            break;
+        default:
+            break;
         }
     }
 }
@@ -155,6 +232,33 @@ int main() {
         { 0, 1, 2, 2, 3, 0 }
     );
     plane->SetTexture(grassImage);
+
+    const uint32_t sphereRings = 16;
+    const uint32_t sphereSegments = 24;
+    std::vector<Vertex> sphereVertices;
+    std::vector<uint32_t> sphereIndices;
+    for (uint32_t ring = 0; ring <= sphereRings; ++ring) {
+        const float theta = 3.14159265359f * static_cast<float>(ring) / sphereRings;
+        for (uint32_t segment = 0; segment <= sphereSegments; ++segment) {
+            const float phi = 6.28318530718f * static_cast<float>(segment) / sphereSegments;
+            const glm::vec3 position(
+                sinf(theta) * cosf(phi),
+                cosf(theta),
+                sinf(theta) * sinf(phi));
+            sphereVertices.push_back({ position, glm::vec3(0.25f, 0.65f, 0.95f),
+                glm::vec2(static_cast<float>(segment) / sphereSegments, static_cast<float>(ring) / sphereRings) });
+        }
+    }
+    for (uint32_t ring = 0; ring < sphereRings; ++ring) {
+        for (uint32_t segment = 0; segment < sphereSegments; ++segment) {
+            const uint32_t first = ring * (sphereSegments + 1) + segment;
+            const uint32_t nextRing = first + sphereSegments + 1;
+            sphereIndices.insert(sphereIndices.end(), { first, first + 1, nextRing, first + 1, nextRing + 1, nextRing });
+        }
+    }
+    Model* colliderSphere = new Model(device, transferCommandPool, sphereVertices, sphereIndices);
+    colliderSphere->SetTexture(grassImage);
+    colliderSphere->SetMaterialColor(glm::vec4(0.25f, 0.65f, 0.95f, 0.0f));
     
     Blades* blades = new Blades(device, transferCommandPool, planeDim);
 
@@ -162,6 +266,8 @@ int main() {
 
     Scene* scene = new Scene(device);
     scene->AddModel(plane);
+    scene->AddModel(colliderSphere);
+    scene->SetColliderModel(colliderSphere);
     scene->AddBlades(blades);
 
     renderer = new Renderer(device, swapChain, scene, camera);
@@ -169,6 +275,8 @@ int main() {
     glfwSetWindowSizeCallback(GetGLFWWindow(), resizeCallback);
     glfwSetMouseButtonCallback(GetGLFWWindow(), mouseDownCallback);
     glfwSetCursorPosCallback(GetGLFWWindow(), mouseMoveCallback);
+    glfwSetWindowUserPointer(GetGLFWWindow(), scene);
+    glfwSetKeyCallback(GetGLFWWindow(), keyCallback);
 
     while (!ShouldQuit()) {
         glfwPollEvents();
@@ -183,6 +291,7 @@ int main() {
 
     delete scene;
     delete plane;
+    delete colliderSphere;
     delete blades;
     delete camera;
     delete renderer;

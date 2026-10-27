@@ -44,5 +44,8 @@ void main() {
     gl_Position = camera.proj * camera.view * vec4(worldPos, 1.0);
     fragWorldPos = worldPos;
     fragNormal = normal;
-    fragColor = mix(vec3(0.05, 0.45, 0.1), vec3(0.2, 0.85, 0.2), u);
+    float bladeVariation = fract(sin(dot(base.xz, vec2(12.9898, 78.233))) * 43758.5453);
+    vec3 rootColor = vec3(0.025, 0.16, 0.025);
+    vec3 tipColor = vec3(0.22, 0.62, 0.08);
+    fragColor = mix(rootColor, tipColor, smoothstep(0.0, 1.0, u)) * mix(0.78, 1.18, bladeVariation);
 }

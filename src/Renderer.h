@@ -82,4 +82,6 @@ private:
 
     std::vector<VkCommandBuffer> commandBuffers;
     VkCommandBuffer computeCommandBuffer;
+    VkSemaphore computeFinishedSemaphore;
+    VkFence frameFence;
 };
