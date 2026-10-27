@@ -25,10 +25,10 @@ void main() {
     outV2[gl_InvocationID] = inV2[gl_InvocationID];
     outUp[gl_InvocationID] = inUp[gl_InvocationID];
 
-    gl_TessLevelInner[0] = 1.0;
-    gl_TessLevelInner[1] = 1.0;
-    gl_TessLevelOuter[0] = 1.0;
-    gl_TessLevelOuter[1] = 1.0;
-    gl_TessLevelOuter[2] = 1.0;
-    gl_TessLevelOuter[3] = 1.0;
+    gl_TessLevelInner[0] = 8.0;
+    gl_TessLevelInner[1] = 8.0;
+    gl_TessLevelOuter[0] = 8.0;
+    gl_TessLevelOuter[1] = 8.0;
+    gl_TessLevelOuter[2] = 8.0;
+    gl_TessLevelOuter[3] = 8.0;
 }

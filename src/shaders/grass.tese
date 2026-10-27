@@ -25,20 +25,24 @@ void main() {
     vec3 guide = inV1[0].xyz;
     vec3 tip = inV2[0].xyz;
     vec3 up = normalize(inUp[0].xyz);
-    vec3 bladeDir = normalize(tip - base);
-    vec3 right = normalize(cross(bladeDir, up));
-    if (length(right) < 0.0001) {
-        right = vec3(1.0, 0.0, 0.0);
+    vec3 reference = vec3(1.0, 0.0, 0.0);
+    if (abs(dot(reference, up)) > 0.999) {
+        reference = vec3(0.0, 0.0, 1.0);
     }
+    reference = normalize(reference - up * dot(reference, up));
+    float orientation = inV0[0].w;
+    vec3 facing = normalize(reference * cos(orientation) + cross(up, reference) * sin(orientation));
+    vec3 right = normalize(cross(up, facing));
 
-    vec3 bend = mix(base, guide, u);
-    vec3 tipPoint = mix(guide, tip, u);
-    vec3 position = mix(bend, tipPoint, u);
-    vec3 worldPos = position + right * ((v * 2.0 - 1.0) * inV2[0].w);
-    vec3 normal = normalize(cross(right, bladeDir));
+    float oneMinusU = 1.0 - u;
+    vec3 position = oneMinusU * oneMinusU * base + 2.0 * oneMinusU * u * guide + u * u * tip;
+    vec3 tangent = normalize(2.0 * oneMinusU * (guide - base) + 2.0 * u * (tip - guide));
+    float bladeWidth = inV2[0].w * (1.0 - u);
+    vec3 worldPos = position + right * ((v * 2.0 - 1.0) * bladeWidth);
+    vec3 normal = normalize(cross(right, tangent));
 
     gl_Position = camera.proj * camera.view * vec4(worldPos, 1.0);
     fragWorldPos = worldPos;
     fragNormal = normal;
-    fragColor = mix(vec3(0.05, 0.45, 0.1), vec3(0.2, 0.85, 0.2), clamp((position.y - base.y) / max(inV1[0].w, 0.0001), 0.0, 1.0));
+    fragColor = mix(vec3(0.05, 0.45, 0.1), vec3(0.2, 0.85, 0.2), u);
 }

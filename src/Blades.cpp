@@ -25,14 +25,15 @@ Blades::Blades(Device* device, VkCommandPool commandPool, float planeDim) : Mode
 
         // Bezier point and height (v1)
         float height = MIN_HEIGHT + (generateRandomFloat() * (MAX_HEIGHT - MIN_HEIGHT));
-        currentBlade.v1 = glm::vec4(bladePosition + bladeUp * height, height);
+        glm::vec3 bendDirection(-sinf(direction), 0.0f, cosf(direction));
+        currentBlade.v1 = glm::vec4(bladePosition + bladeUp * (height * 0.55f) + bendDirection * (height * 0.15f), height);
 
         // Physical model guide and width (v2)
         float width = MIN_WIDTH + (generateRandomFloat() * (MAX_WIDTH - MIN_WIDTH));
         currentBlade.v2 = glm::vec4(bladePosition + bladeUp * height, width);
 
-        // Up vector and stiffness coefficient (up)
-        float stiffness = MIN_BEND + (generateRandomFloat() * (MAX_BEND - MIN_BEND));
+        // Surface normal and stiffness coefficient (up)
+        float stiffness = MIN_STIFFNESS + (generateRandomFloat() * (MAX_STIFFNESS - MIN_STIFFNESS));
         currentBlade.up = glm::vec4(bladeUp, stiffness);
 
         blades.push_back(currentBlade);

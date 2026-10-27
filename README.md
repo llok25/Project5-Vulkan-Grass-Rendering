@@ -12,3 +12,5 @@ Vulkan Grass Rendering
 project, and we will not be able to grade you without a good README.
 
 ![Cover render](img/run1.gif)
+
+![Run2 render](img/run2.gif)

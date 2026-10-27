@@ -57,20 +57,27 @@ void main() {
     Blade blade = inputBlades.blades[index];
     vec3 wind = vec3(sin(blade.v0.x * 0.7 + totalTime * 1.3), 0.0, cos(blade.v0.z * 0.8 + totalTime * 1.1));
     vec3 up = normalize(blade.up.xyz);
-    vec3 v2 = blade.v2.xyz + wind * deltaTime * 0.5;
-
     float height = blade.v1.w;
     float width = blade.v2.w;
-    vec3 desiredV1 = blade.v0.xyz + up * height;
-    blade.v1.xyz = mix(blade.v1.xyz, desiredV1, 0.2);
-    blade.v2.xyz = v2;
+    float stiffness = max(blade.up.w, 0.001);
+    vec3 restV2 = blade.v0.xyz + up * height;
+    vec3 restV1 = blade.v0.xyz + up * (height * 0.55);
+    vec3 guideOffset = blade.v1.xyz - restV1;
+    blade.v1.xyz = restV1 + guideOffset + wind / stiffness * 0.25;
+    blade.v2.xyz = restV2 + wind / stiffness;
     blade.v2.w = width;
 
-    vec4 clipPos = camera.proj * camera.view * vec4(blade.v0.xyz, 1.0);
+    vec4 clipV0 = camera.proj * camera.view * vec4(blade.v0.xyz, 1.0);
+    vec4 clipV1 = camera.proj * camera.view * vec4(blade.v1.xyz, 1.0);
+    vec4 clipV2 = camera.proj * camera.view * vec4(blade.v2.xyz, 1.0);
     float radius = max(3.0, width * 25.0);
-    bool visible = clipPos.z > -0.1 && clipPos.z < clipPos.w * 2.0 &&
-                   abs(clipPos.x) < clipPos.w + radius &&
-                   abs(clipPos.y) < clipPos.w + radius;
+    bool outsideLeft = clipV0.x < -clipV0.w - radius && clipV1.x < -clipV1.w - radius && clipV2.x < -clipV2.w - radius;
+    bool outsideRight = clipV0.x > clipV0.w + radius && clipV1.x > clipV1.w + radius && clipV2.x > clipV2.w + radius;
+    bool outsideBottom = clipV0.y < -clipV0.w - radius && clipV1.y < -clipV1.w - radius && clipV2.y < -clipV2.w - radius;
+    bool outsideTop = clipV0.y > clipV0.w + radius && clipV1.y > clipV1.w + radius && clipV2.y > clipV2.w + radius;
+    bool outsideNear = clipV0.z < -0.1 && clipV1.z < -0.1 && clipV2.z < -0.1;
+    bool outsideFar = clipV0.z > clipV0.w * 2.0 && clipV1.z > clipV1.w * 2.0 && clipV2.z > clipV2.w * 2.0;
+    bool visible = !(outsideLeft || outsideRight || outsideBottom || outsideTop || outsideNear || outsideFar);
 
     if (visible) {
         uint writeIndex = atomicAdd(numBlades.vertexCount, 1u);
