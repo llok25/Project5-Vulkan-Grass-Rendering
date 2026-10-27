@@ -27,3 +27,5 @@ project, and we will not be able to grade you without a good README.
 - Use the **arrow keys** to nudge the blue sphere. Nearby blades are pushed aside by the sphere and its motion.
 
 Grass blades use per-blade color variation, root-to-tip shading, ambient and diffuse lighting, backlighting, and a subtle specular highlight.
+
+The background uses a camera-oriented procedural sky with a blue zenith, atmospheric horizon haze, and a soft sun glow.

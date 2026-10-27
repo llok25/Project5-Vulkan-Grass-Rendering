@@ -31,6 +31,7 @@ public:
     void CreateGraphicsPipeline();
     void CreateGrassPipeline();
     void CreateComputePipeline();
+    void CreateSkyPipeline();
 
     void CreateFrameResources();
     void DestroyFrameResources();
@@ -73,6 +74,7 @@ private:
     VkPipeline graphicsPipeline;
     VkPipeline grassPipeline;
     VkPipeline computePipeline;
+    VkPipeline skyPipeline;
 
     std::vector<VkImageView> imageViews;
     VkImage depthImage;
