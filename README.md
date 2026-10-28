@@ -8,7 +8,7 @@ Vulkan Grass Rendering
 
 This project implements a real-time Vulkan grass renderer inspired by responsive real-time grass simulation. I built a GPU-driven Bezier grass system that simulates blade motion, responds to wind and object collisions, and culls blades aggressively to keep the render fast even at high blade counts.
 
-![Cover render](img/run7.gif)
+![Cover render](img/run7_cut.gif)
 
 ![Cover render 2](img/run6.gif)
 
@@ -97,3 +97,7 @@ Analysis:
 Grass blades use per-blade color variation, root-to-tip shading, ambient and diffuse lighting, backlighting, and a subtle specular highlight.
 
 The background uses a camera-oriented procedural sky with a blue zenith, atmospheric horizon haze, and a soft sun glow.
+
+## Credits
+
+This project builds on the CIS 565 Vulkan starter framework and course materials. The grass representation, simulation, and culling are informed by [Responsive Real-Time Grass Rendering for General 3D Scenes](https://www.cg.tuwien.ac.at/research/publications/2017/JAHRMANN-2017-RRTG/JAHRMANN-2017-RRTG-draft.pdf). The project uses [GLFW](https://github.com/glfw/glfw), [GLM](https://github.com/g-truc/glm), and [stb](https://github.com/nothings/stb).
