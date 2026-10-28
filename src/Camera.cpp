@@ -41,6 +41,26 @@ void Camera::UpdateOrbit(float deltaX, float deltaY, float deltaZ) {
     memcpy(mappedData, &cameraBufferObject, sizeof(CameraBufferObject));
 }
 
+void Camera::UpdatePan(float deltaX, float deltaY, int viewportHeight) {
+    if (viewportHeight <= 0) {
+        return;
+    }
+
+    const glm::mat4 inverseView = glm::inverse(cameraBufferObject.viewMatrix);
+    const glm::vec3 right(inverseView[0]);
+    const glm::vec3 up(inverseView[1]);
+    const float worldUnitsPerPixel = 2.0f * r * glm::tan(glm::radians(22.5f)) / viewportHeight;
+    const glm::vec3 pan = worldUnitsPerPixel * (-deltaX * right + deltaY * up);
+
+    glm::mat4 rotation = glm::rotate(glm::mat4(1.0f), glm::radians(theta), glm::vec3(0.0f, 1.0f, 0.0f)) *
+        glm::rotate(glm::mat4(1.0f), glm::radians(phi), glm::vec3(1.0f, 0.0f, 0.0f));
+    glm::mat4 finalTransform = glm::translate(glm::mat4(1.0f), pan) * rotation *
+        glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 1.0f, r));
+    cameraBufferObject.viewMatrix = glm::inverse(finalTransform);
+
+    memcpy(mappedData, &cameraBufferObject, sizeof(CameraBufferObject));
+}
+
 bool Camera::ScreenToWorldOnPlane(double x, double y, int width, int height, float planeY, glm::vec3& worldPosition) const {
     if (width <= 0 || height <= 0) {
         return false;

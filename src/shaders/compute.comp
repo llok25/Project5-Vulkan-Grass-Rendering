@@ -16,6 +16,7 @@ layout(set = 1, binding = 0) uniform Time {
     float windDirectionAngle;
     vec4 collider;
     vec4 colliderVelocity;
+    uvec4 performanceSettings;
 };
 
 struct Blade {
@@ -49,7 +50,7 @@ float bladeHash(uint value) {
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    if (index >= 8192u) {
+    if (index >= performanceSettings.x) {
         return;
     }
 
@@ -146,48 +147,61 @@ void main() {
     vec3 windBentGuide = blade.v1.xyz + windDirection * height * windStrength * windAlignment * (0.04 * flattenWeight);
     blade.v1.xyz = mix(windBentGuide, curvedGuide, sphereBlend);
 
-    vec3 cameraPosition = (inverse(camera.view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-    vec3 viewDirection = normalize(cameraPosition - blade.v0.xyz);
-    float facingAlignment = abs(dot(facing, viewDirection));
-    bool orientationVisible = (1.0 - facingAlignment) <= 0.9;
-
-    vec4 clipV0 = camera.proj * camera.view * vec4(blade.v0.xyz, 1.0);
-    vec4 clipV2 = camera.proj * camera.view * vec4(blade.v2.xyz, 1.0);
-    vec3 midpoint = (blade.v0.xyz + 2.0 * blade.v1.xyz + blade.v2.xyz) * 0.25;
-    vec4 clipMidpoint = camera.proj * camera.view * vec4(midpoint, 1.0);
-    vec4 clipSamples[3] = vec4[3](clipV0, clipMidpoint, clipV2);
-    vec4 clipSide = camera.proj * camera.view * vec4(side * width, 0.0);
-    bool outsideLeft = true;
-    bool outsideRight = true;
-    bool outsideBottom = true;
-    bool outsideTop = true;
-    bool outsideNear = true;
-    bool outsideFar = true;
-    for (int sampleIndex = 0; sampleIndex < 3; ++sampleIndex) {
-        vec4 clipPlus = clipSamples[sampleIndex] + clipSide;
-        vec4 clipMinus = clipSamples[sampleIndex] - clipSide;
-        outsideLeft = outsideLeft && clipPlus.x < -clipPlus.w && clipMinus.x < -clipMinus.w;
-        outsideRight = outsideRight && clipPlus.x > clipPlus.w && clipMinus.x > clipMinus.w;
-        outsideBottom = outsideBottom && clipPlus.y < -clipPlus.w && clipMinus.y < -clipMinus.w;
-        outsideTop = outsideTop && clipPlus.y > clipPlus.w && clipMinus.y > clipMinus.w;
-        outsideNear = outsideNear && clipPlus.z < 0.0 && clipMinus.z < 0.0;
-        outsideFar = outsideFar && clipPlus.z > clipPlus.w && clipMinus.z > clipMinus.w;
+    vec3 cameraPosition = vec3(0.0);
+    if ((performanceSettings.y & 5u) != 0u) {
+        cameraPosition = (inverse(camera.view) * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
     }
-    bool frustumVisible = !(outsideLeft || outsideRight || outsideBottom || outsideTop || outsideNear || outsideFar);
 
-    const float maxCullDistance = 50.0;
-    const uint distanceBucketCount = 8u;
-    float cameraDistance = length(cameraPosition - blade.v0.xyz);
-    bool distanceVisible = false;
-    if (cameraDistance < maxCullDistance) {
-        uint distanceBucket = min(uint(cameraDistance / maxCullDistance * float(distanceBucketCount)), distanceBucketCount - 1u);
-        float keepProbability = 1.0 - float(distanceBucket) / float(distanceBucketCount);
-        uint hash = index * 1664525u + 1013904223u;
-        hash ^= hash >> 16;
-        hash *= 2246822519u;
-        hash ^= hash >> 13;
-        float bladeSample = float(hash & 0x00ffffffu) / 16777216.0;
-        distanceVisible = bladeSample < keepProbability;
+    bool orientationVisible = true;
+    if ((performanceSettings.y & 1u) != 0u) {
+        vec3 viewDirection = normalize(cameraPosition - blade.v0.xyz);
+        float facingAlignment = abs(dot(facing, viewDirection));
+        orientationVisible = (1.0 - facingAlignment) <= 0.9;
+    }
+
+    bool frustumVisible = true;
+    if ((performanceSettings.y & 2u) != 0u) {
+        vec4 clipV0 = camera.proj * camera.view * vec4(blade.v0.xyz, 1.0);
+        vec4 clipV2 = camera.proj * camera.view * vec4(blade.v2.xyz, 1.0);
+        vec3 midpoint = (blade.v0.xyz + 2.0 * blade.v1.xyz + blade.v2.xyz) * 0.25;
+        vec4 clipMidpoint = camera.proj * camera.view * vec4(midpoint, 1.0);
+        vec4 clipSamples[3] = vec4[3](clipV0, clipMidpoint, clipV2);
+        vec4 clipSide = camera.proj * camera.view * vec4(side * width, 0.0);
+        bool outsideLeft = true;
+        bool outsideRight = true;
+        bool outsideBottom = true;
+        bool outsideTop = true;
+        bool outsideNear = true;
+        bool outsideFar = true;
+        for (int sampleIndex = 0; sampleIndex < 3; ++sampleIndex) {
+            vec4 clipPlus = clipSamples[sampleIndex] + clipSide;
+            vec4 clipMinus = clipSamples[sampleIndex] - clipSide;
+            outsideLeft = outsideLeft && clipPlus.x < -clipPlus.w && clipMinus.x < -clipMinus.w;
+            outsideRight = outsideRight && clipPlus.x > clipPlus.w && clipMinus.x > clipMinus.w;
+            outsideBottom = outsideBottom && clipPlus.y < -clipPlus.w && clipMinus.y < -clipMinus.w;
+            outsideTop = outsideTop && clipPlus.y > clipPlus.w && clipMinus.y > clipMinus.w;
+            outsideNear = outsideNear && clipPlus.z < 0.0 && clipMinus.z < 0.0;
+            outsideFar = outsideFar && clipPlus.z > clipPlus.w && clipMinus.z > clipMinus.w;
+        }
+        frustumVisible = !(outsideLeft || outsideRight || outsideBottom || outsideTop || outsideNear || outsideFar);
+    }
+
+    bool distanceVisible = true;
+    if ((performanceSettings.y & 4u) != 0u) {
+        const float maxCullDistance = 50.0;
+        const uint distanceBucketCount = 8u;
+        float cameraDistance = length(cameraPosition - blade.v0.xyz);
+        distanceVisible = false;
+        if (cameraDistance < maxCullDistance) {
+            uint distanceBucket = min(uint(cameraDistance / maxCullDistance * float(distanceBucketCount)), distanceBucketCount - 1u);
+            float keepProbability = 1.0 - float(distanceBucket) / float(distanceBucketCount);
+            uint hash = index * 1664525u + 1013904223u;
+            hash ^= hash >> 16;
+            hash *= 2246822519u;
+            hash ^= hash >> 13;
+            float bladeSample = float(hash & 0x00ffffffu) / 16777216.0;
+            distanceVisible = bladeSample < keepProbability;
+        }
     }
 
     bool visible = orientationVisible && frustumVisible && distanceVisible;

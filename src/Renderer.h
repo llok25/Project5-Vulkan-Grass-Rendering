@@ -4,6 +4,7 @@
 #include "SwapChain.h"
 #include "Scene.h"
 #include "Camera.h"
+#include <fstream>
 
 class Renderer {
 public:
@@ -32,6 +33,7 @@ public:
     void CreateGrassPipeline();
     void CreateComputePipeline();
     void CreateSkyPipeline();
+    void TogglePerformanceCapture();
 
     void CreateFrameResources();
     void DestroyFrameResources();
@@ -86,4 +88,19 @@ private:
     VkCommandBuffer computeCommandBuffer;
     VkSemaphore computeFinishedSemaphore;
     VkFence frameFence;
+    VkQueryPool performanceQueryPool;
+    double timestampPeriodNanoseconds;
+    uint32_t computeTimestampValidBits;
+    uint32_t graphicsTimestampValidBits;
+    bool timestampQueriesSupported;
+    bool performanceCaptureEnabled;
+    bool performanceLogInitialized;
+    bool hasSubmittedPerformanceFrame;
+    uint64_t performanceFrameNumber;
+    uint32_t submittedBladeCount;
+    uint32_t submittedCullingMask;
+    uint32_t recordedComputeBladeCount;
+    std::ofstream performanceLog;
+
+    void RecordCompletedPerformanceFrame();
 };

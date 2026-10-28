@@ -91,16 +91,27 @@ namespace {
             previousX = xPosition;
             previousY = yPosition;
         } else if (rightMouseDown) {
-            double deltaZ = static_cast<float>((previousY - yPosition) * 0.05);
-
-            camera->UpdateOrbit(0.0f, 0.0f, deltaZ);
-
+            int height;
+            glfwGetWindowSize(window, nullptr, &height);
+            camera->UpdatePan(
+                static_cast<float>(xPosition - previousX),
+                static_cast<float>(yPosition - previousY),
+                height);
+            previousX = xPosition;
             previousY = yPosition;
         }
     }
 
+    void scrollCallback(GLFWwindow* window, double, double yOffset) {
+        camera->UpdateOrbit(0.0f, 0.0f, static_cast<float>(yOffset) * 0.5f);
+    }
+
     void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
         if (action != GLFW_PRESS && action != GLFW_REPEAT) {
+            return;
+        }
+        if ((key == GLFW_KEY_F1 || key == GLFW_KEY_F2 || key == GLFW_KEY_F3 || key == GLFW_KEY_P) &&
+            action != GLFW_PRESS) {
             return;
         }
 
@@ -137,6 +148,30 @@ namespace {
             break;
         case GLFW_KEY_RIGHT:
             scene->MoveCollider(0.25f, 0.0f);
+            break;
+        case GLFW_KEY_1:
+            scene->SetActiveBladeCount(1024);
+            break;
+        case GLFW_KEY_2:
+            scene->SetActiveBladeCount(2048);
+            break;
+        case GLFW_KEY_3:
+            scene->SetActiveBladeCount(4096);
+            break;
+        case GLFW_KEY_4:
+            scene->SetActiveBladeCount(NUM_BLADES);
+            break;
+        case GLFW_KEY_F1:
+            scene->ToggleCullingTest(OrientationCulling);
+            break;
+        case GLFW_KEY_F2:
+            scene->ToggleCullingTest(FrustumCulling);
+            break;
+        case GLFW_KEY_F3:
+            scene->ToggleCullingTest(DistanceCulling);
+            break;
+        case GLFW_KEY_P:
+            renderer->TogglePerformanceCapture();
             break;
         default:
             break;
@@ -275,6 +310,7 @@ int main() {
     glfwSetWindowSizeCallback(GetGLFWWindow(), resizeCallback);
     glfwSetMouseButtonCallback(GetGLFWWindow(), mouseDownCallback);
     glfwSetCursorPosCallback(GetGLFWWindow(), mouseMoveCallback);
+    glfwSetScrollCallback(GetGLFWWindow(), scrollCallback);
     glfwSetWindowUserPointer(GetGLFWWindow(), scene);
     glfwSetKeyCallback(GetGLFWWindow(), keyCallback);
 

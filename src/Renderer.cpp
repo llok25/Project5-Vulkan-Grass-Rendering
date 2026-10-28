@@ -6,6 +6,7 @@
 #include "Blades.h"
 #include "Camera.h"
 #include "Image.h"
+#include <iostream>
 
 static constexpr unsigned int WORKGROUP_SIZE = 32;
 
@@ -14,7 +15,20 @@ Renderer::Renderer(Device *device, SwapChain *swapChain, Scene *scene, Camera *c
       logicalDevice(device->GetVkDevice()),
       swapChain(swapChain),
       scene(scene),
-      camera(camera)
+      camera(camera),
+      computeCommandBuffer(VK_NULL_HANDLE),
+      performanceQueryPool(VK_NULL_HANDLE),
+      timestampPeriodNanoseconds(0.0),
+      computeTimestampValidBits(0),
+      graphicsTimestampValidBits(0),
+      timestampQueriesSupported(false),
+      performanceCaptureEnabled(false),
+      performanceLogInitialized(false),
+      hasSubmittedPerformanceFrame(false),
+      performanceFrameNumber(0),
+      submittedBladeCount(0),
+      submittedCullingMask(0),
+      recordedComputeBladeCount(0)
 {
 
     CreateCommandPools();
@@ -34,6 +48,32 @@ Renderer::Renderer(Device *device, SwapChain *swapChain, Scene *scene, Camera *c
     CreateGrassPipeline();
     CreateComputePipeline();
     CreateSkyPipeline();
+
+    VkPhysicalDevice physicalDevice = device->GetInstance()->GetPhysicalDevice();
+    VkPhysicalDeviceProperties physicalDeviceProperties = {};
+    vkGetPhysicalDeviceProperties(physicalDevice, &physicalDeviceProperties);
+    timestampPeriodNanoseconds = physicalDeviceProperties.limits.timestampPeriod;
+
+    uint32_t queueFamilyCount = 0;
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, nullptr);
+    std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+    vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueFamilyCount, queueFamilies.data());
+    const QueueFamilyIndices& queueFamilyIndices = device->GetInstance()->GetQueueFamilyIndices();
+    computeTimestampValidBits = queueFamilies[queueFamilyIndices[QueueFlags::Compute]].timestampValidBits;
+    graphicsTimestampValidBits = queueFamilies[queueFamilyIndices[QueueFlags::Graphics]].timestampValidBits;
+    timestampQueriesSupported = computeTimestampValidBits != 0 && graphicsTimestampValidBits != 0;
+    if (timestampQueriesSupported)
+    {
+        VkQueryPoolCreateInfo queryPoolInfo = {};
+        queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        queryPoolInfo.queryCount = 4;
+        if (vkCreateQueryPool(logicalDevice, &queryPoolInfo, nullptr, &performanceQueryPool) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create performance timestamp query pool");
+        }
+    }
+
     RecordCommandBuffers();
     RecordComputeCommandBuffer();
 
@@ -68,7 +108,7 @@ void Renderer::CreateCommandPools()
     VkCommandPoolCreateInfo computePoolInfo = {};
     computePoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     computePoolInfo.queueFamilyIndex = device->GetInstance()->GetQueueFamilyIndices()[QueueFlags::Compute];
-    computePoolInfo.flags = 0;
+    computePoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
     if (vkCreateCommandPool(logicalDevice, &computePoolInfo, nullptr, &computeCommandPool) != VK_SUCCESS)
     {
@@ -1145,16 +1185,22 @@ void Renderer::RecreateFrameResources()
 
 void Renderer::RecordComputeCommandBuffer()
 {
-    // Specify the command pool and number of buffers to allocate
-    VkCommandBufferAllocateInfo allocInfo = {};
-    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    allocInfo.commandPool = computeCommandPool;
-    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    allocInfo.commandBufferCount = 1;
-
-    if (vkAllocateCommandBuffers(logicalDevice, &allocInfo, &computeCommandBuffer) != VK_SUCCESS)
+    if (computeCommandBuffer == VK_NULL_HANDLE)
     {
-        throw std::runtime_error("Failed to allocate command buffers");
+        VkCommandBufferAllocateInfo allocInfo = {};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = computeCommandPool;
+        allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        allocInfo.commandBufferCount = 1;
+
+        if (vkAllocateCommandBuffers(logicalDevice, &allocInfo, &computeCommandBuffer) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to allocate command buffers");
+        }
+    }
+    else if (vkResetCommandBuffer(computeCommandBuffer, 0) != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to reset compute command buffer");
     }
 
     VkCommandBufferBeginInfo beginInfo = {};
@@ -1166,6 +1212,12 @@ void Renderer::RecordComputeCommandBuffer()
     if (vkBeginCommandBuffer(computeCommandBuffer, &beginInfo) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to begin recording compute command buffer");
+    }
+
+    if (timestampQueriesSupported)
+    {
+        vkCmdResetQueryPool(computeCommandBuffer, performanceQueryPool, 0, 4);
+        vkCmdWriteTimestamp(computeCommandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, performanceQueryPool, 0);
     }
 
     // Bind to the compute pipeline
@@ -1212,7 +1264,8 @@ void Renderer::RecordComputeCommandBuffer()
     for (uint32_t i = 0; i < scene->GetBlades().size(); ++i)
     {
         vkCmdBindDescriptorSets(computeCommandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, computePipelineLayout, 2, 1, &computeDescriptorSets[i], 0, nullptr);
-        vkCmdDispatch(computeCommandBuffer, static_cast<uint32_t>((NUM_BLADES + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE), 1, 1);
+        const uint32_t bladeCount = scene->GetActiveBladeCount();
+        vkCmdDispatch(computeCommandBuffer, (bladeCount + WORKGROUP_SIZE - 1) / WORKGROUP_SIZE, 1, 1);
     }
 
     VkMemoryBarrier simulationBarrier = {};
@@ -1231,11 +1284,17 @@ void Renderer::RecordComputeCommandBuffer()
         0,
         nullptr);
 
+    if (timestampQueriesSupported)
+    {
+        vkCmdWriteTimestamp(computeCommandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, performanceQueryPool, 1);
+    }
+
     // ~ End recording ~
     if (vkEndCommandBuffer(computeCommandBuffer) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to record compute command buffer");
     }
+    recordedComputeBladeCount = scene->GetActiveBladeCount();
 }
 
 void Renderer::RecordCommandBuffers()
@@ -1266,6 +1325,11 @@ void Renderer::RecordCommandBuffers()
         if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS)
         {
             throw std::runtime_error("Failed to begin recording command buffer");
+        }
+
+        if (timestampQueriesSupported)
+        {
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, performanceQueryPool, 2);
         }
 
         // Begin the render pass
@@ -1328,6 +1392,11 @@ void Renderer::RecordCommandBuffers()
         // End render pass
         vkCmdEndRenderPass(commandBuffers[i]);
 
+        if (timestampQueriesSupported)
+        {
+            vkCmdWriteTimestamp(commandBuffers[i], VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, performanceQueryPool, 3);
+        }
+
         // ~ End recording ~
         if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS)
         {
@@ -1341,6 +1410,17 @@ void Renderer::Frame()
     if (vkWaitForFences(logicalDevice, 1, &frameFence, VK_TRUE, UINT64_MAX) != VK_SUCCESS)
     {
         throw std::runtime_error("Failed to wait for previous frame");
+    }
+
+    if (hasSubmittedPerformanceFrame)
+    {
+        RecordCompletedPerformanceFrame();
+        hasSubmittedPerformanceFrame = false;
+    }
+
+    if (recordedComputeBladeCount != scene->GetActiveBladeCount())
+    {
+        RecordComputeCommandBuffer();
     }
 
     if (!swapChain->Acquire())
@@ -1368,8 +1448,8 @@ void Renderer::Frame()
 
     VkSemaphore waitSemaphores[] = {swapChain->GetImageAvailableVkSemaphore(), computeFinishedSemaphore};
     VkPipelineStageFlags waitStages[] = {
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-        VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT};
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT};
     submitInfo.waitSemaphoreCount = 2;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
@@ -1390,17 +1470,116 @@ void Renderer::Frame()
         throw std::runtime_error("Failed to submit draw command buffer");
     }
 
+    submittedBladeCount = scene->GetActiveBladeCount();
+    submittedCullingMask = scene->GetCullingMask();
+    hasSubmittedPerformanceFrame = true;
+
     if (!swapChain->Present())
     {
         RecreateFrameResources();
     }
 }
 
+void Renderer::TogglePerformanceCapture()
+{
+    if (!timestampQueriesSupported)
+    {
+        std::cerr << "GPU timestamp queries are unavailable on the selected queues.\n";
+        return;
+    }
+
+    if (performanceCaptureEnabled)
+    {
+        performanceCaptureEnabled = false;
+        performanceLog.flush();
+        performanceLog.close();
+        std::cout << "GPU timing capture stopped.\n";
+        return;
+    }
+
+    const std::ios_base::openmode mode = std::ios::out |
+        (performanceLogInitialized ? std::ios::app : std::ios::trunc);
+    performanceLog.open("performance.csv", mode);
+    if (!performanceLog.is_open())
+    {
+        throw std::runtime_error("Failed to open performance.csv for GPU timing capture");
+    }
+    if (!performanceLogInitialized)
+    {
+        performanceLog << "frame,blade_count,orientation_culling,frustum_culling,distance_culling,compute_ms,graphics_ms\n";
+        performanceLogInitialized = true;
+    }
+    performanceCaptureEnabled = true;
+    std::cout << "GPU timing capture started: performance.csv\n";
+}
+
+void Renderer::RecordCompletedPerformanceFrame()
+{
+    if (!timestampQueriesSupported || !performanceCaptureEnabled)
+    {
+        return;
+    }
+
+    uint64_t timestamps[4] = {};
+    const VkResult result = vkGetQueryPoolResults(
+        logicalDevice,
+        performanceQueryPool,
+        0,
+        4,
+        sizeof(timestamps),
+        timestamps,
+        sizeof(uint64_t),
+        VK_QUERY_RESULT_64_BIT);
+    if (result != VK_SUCCESS)
+    {
+        throw std::runtime_error("Failed to read completed GPU performance timestamps");
+    }
+
+    auto elapsedTicks = [](uint64_t start, uint64_t end, uint32_t validBits) {
+        const uint64_t difference = end - start;
+        if (validBits >= 64)
+        {
+            return difference;
+        }
+        return difference & ((uint64_t(1) << validBits) - 1);
+    };
+    const double computeMilliseconds =
+        elapsedTicks(timestamps[0], timestamps[1], computeTimestampValidBits) *
+        timestampPeriodNanoseconds / 1000000.0;
+    const double graphicsMilliseconds =
+        elapsedTicks(timestamps[2], timestamps[3], graphicsTimestampValidBits) *
+        timestampPeriodNanoseconds / 1000000.0;
+
+    performanceLog << performanceFrameNumber++ << ','
+                   << submittedBladeCount << ','
+                   << ((submittedCullingMask & OrientationCulling) != 0) << ','
+                   << ((submittedCullingMask & FrustumCulling) != 0) << ','
+                   << ((submittedCullingMask & DistanceCulling) != 0) << ','
+                   << computeMilliseconds << ','
+                   << graphicsMilliseconds << '\n';
+    if (!performanceLog)
+    {
+        throw std::runtime_error("Failed while writing GPU performance data to performance.csv");
+    }
+}
+
 Renderer::~Renderer()
 {
     vkDeviceWaitIdle(logicalDevice);
+    if (hasSubmittedPerformanceFrame)
+    {
+        RecordCompletedPerformanceFrame();
+    }
+    if (performanceLog.is_open())
+    {
+        performanceLog.close();
+    }
 
     // TODO: destroy any resources you created
+    if (performanceQueryPool != VK_NULL_HANDLE)
+    {
+        vkDestroyQueryPool(logicalDevice, performanceQueryPool, nullptr);
+    }
     vkDestroyFence(logicalDevice, frameFence, nullptr);
     vkDestroySemaphore(logicalDevice, computeFinishedSemaphore, nullptr);
 

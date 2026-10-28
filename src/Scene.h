@@ -8,6 +8,12 @@
 
 using namespace std::chrono;
 
+enum CullingTestBits {
+    OrientationCulling = 1u,
+    FrustumCulling = 2u,
+    DistanceCulling = 4u
+};
+
 struct Time {
     float deltaTime = 0.0f;
     float totalTime = 0.0f;
@@ -15,8 +21,9 @@ struct Time {
     float windDirection = 0.0f;
     glm::vec4 collider = glm::vec4(0.0f, 1.8f, 0.0f, 0.65f);
     glm::vec4 colliderVelocity = glm::vec4(0.0f);
+    glm::uvec4 performanceSettings = glm::uvec4(NUM_BLADES, OrientationCulling | FrustumCulling | DistanceCulling, 0u, 0u);
 };
-static_assert(sizeof(Time) == 48, "Time must match the compute shader uniform layout");
+static_assert(sizeof(Time) == 64, "Time must match the compute shader uniform layout");
 
 class Scene {
 private:
@@ -59,4 +66,8 @@ public:
     void BeginColliderDrag();
     void DragColliderTo(const glm::vec3& position);
     void EndColliderDrag();
+    void SetActiveBladeCount(uint32_t count);
+    void ToggleCullingTest(uint32_t test);
+    uint32_t GetActiveBladeCount() const;
+    uint32_t GetCullingMask() const;
 };

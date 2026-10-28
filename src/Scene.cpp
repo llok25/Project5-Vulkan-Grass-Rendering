@@ -133,6 +133,24 @@ void Scene::EndColliderDrag() {
     colliderDragging = false;
 }
 
+void Scene::SetActiveBladeCount(uint32_t count) {
+    time.performanceSettings.x = glm::clamp(count, 1u, NUM_BLADES);
+    memcpy(mappedData, &time, sizeof(Time));
+}
+
+void Scene::ToggleCullingTest(uint32_t test) {
+    time.performanceSettings.y ^= test;
+    memcpy(mappedData, &time, sizeof(Time));
+}
+
+uint32_t Scene::GetActiveBladeCount() const {
+    return time.performanceSettings.x;
+}
+
+uint32_t Scene::GetCullingMask() const {
+    return time.performanceSettings.y;
+}
+
 VkBuffer Scene::GetTimeBuffer() const {
     return timeBuffer;
 }
