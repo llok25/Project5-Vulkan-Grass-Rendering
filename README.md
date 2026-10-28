@@ -8,7 +8,7 @@ Vulkan Grass Rendering
 
 This project implements a real-time Vulkan grass renderer inspired by responsive real-time grass simulation. I built a GPU-driven Bezier grass system that simulates blade motion, responds to wind and object collisions, and culls blades aggressively to keep the render fast even at high blade counts.
 
-![Cover render](img/run5.gif)
+![Cover render](img/run7.gif)
 
 ![Cover render 2](img/run6.gif)
 
